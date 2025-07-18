@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SATE MARANGGI SI BUNGSU - Sistem Kasir</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        .layer {
+            display: none;
+        }
+        .active-layer {
+            display: block;
+        }
+        .receipt {
+            width: 300px;
+            font-family: 'Courier New', monospace;
+        }
+        .meja-item {
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .meja-item:hover {
+            transform: scale(1.05);
+        }
+        .menu-item {
+            transition: all 0.3s;
+        }
+        .menu-item:hover {
+            background-color: #f0f0f0;
+        }
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+
+            #receiptPreview,
+            #receiptPreview * {
+                visibility: visible;
+            }
+
+            #receiptPreview {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 80mm; /* Ukuran printer thermal */
+                padding: 10px;
+                font-size: 12px;
+            }
+
+            #confirmPrint {
+                display: none; /* Tombol ini tidak dicetak */
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-orange-600">SATE MARANGGI SI BUNGSU</h1>
+                <p class="text-gray-600">Sistem Kasir & Pemesanan</p>
+            </div>
+            <div class="flex space-x-4">
+                <button id="kasirBtn" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition">Kasir</button>
+                <button id="pesananBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Pesanan</button>
+                <button id="menuBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Kelola Menu</button>
+                <button id="inventoryBtn" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">Inventori</button>
+                <button id="laporanBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Laporan</button>
+            </div>
+        </div>
+
+        <!-- Kasir Layer -->
+        <div id="kasirLayer" class="layer active-layer">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold mb-4 text-orange-600">Kasir Pembayaran</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="col-span-2">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Cari Pesanan:</label>
+                            <input type="text" id="searchOrder" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="Nomor Meja atau Nama Pelanggan">
+                        </div>
+                        <div class="overflow-y-auto max-h-96">
+                            <table class="w-full border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-200">
+                                        <th class="p-2 border">No</th>
+                                        <th class="p-2 border">Meja</th>
+                                        <th class="p-2 border">Pelanggan</th>
+                                        <th class="p-2 border">Total</th>
+                                        <th class="p-2 border">Status</th>
+                                        <th class="p-2 border">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="orderList">
+                                    <!-- Orders will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="bg-gray-100 p-4 rounded-lg">
+                            <h3 class="text-lg font-semibold mb-4">Detail Pembayaran</h3>
+                            <div id="paymentDetails">
+                                <p class="text-gray-500">Pilih pesanan untuk melihat detail</p>
+                            </div>
+                            <div class="mt-4">
+                                <button id="printReceipt" class="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition" disabled>Cetak Struk</button>
+                            </div>
+                        </div>
+                        <div class="mt-6 hidden" id="receiptPreview">
+                            <div class="receipt p-4 border border-gray-300">
+                                <div class="text-center font-bold mb-2">SATE MARANGGI SI BUNGSU</div>
+                                <div class="text-center mb-2 text-sm">Jl. Maranggi No. 123, Kota</div>
+                                <div class="text-center mb-4 text-sm">Telp: 08123456789</div>
+                                <div class="text-center mb-2">-----------------------------</div>
+                                <div class="mb-2">
+                                    <div class="flex justify-between">
+                                        <span>No. Transaksi:</span>
+                                        <span>TRX001</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Tanggal:</span>
+                                        <span id="transactionDate"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Meja:</span>
+                                        <span id="receiptTable"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Pelanggan:</span>
+                                        <span id="receiptCustomer"></span>
+                                    </div>
+                                </div>
+                                <div class="text-center mb-2">-----------------------------</div>
+                                <div id="receiptItems" class="mb-2"></div>
+                                <div class="text-center mb-2">-----------------------------</div>
+                                <div class="mb-2">
+                                    <div class="flex justify-between font-bold">
+                                        <span>Total:</span>
+                                        <span id="receiptTotal"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Bayar:</span>
+                                        <span id="receiptPaid"></span>
+                                    </div>
+                                    <div class="flex justify-between font-bold">
+                                        <span>Kembali:</span>
+                                        <span id="receiptChange"></span>
+                                    </div>
+                                </div>
+                                <div class="text-center mb-2">-----------------------------</div>
+                                <div class="text-center text-sm">Terima kasih telah berkunjung</div>
+                            </div>
+                            <button id="confirmPrint" class="w-full mt-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Konfirmasi Cetak</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pesanan Layer -->
+        <div id="pesananLayer" class="layer">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold mb-4 text-green-600">Pemesanan Meja</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="col-span-1">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Nomor Meja:</label>
+                            <select id="tableNumber" class="w-full p-2 border border-gray-300 rounded-lg">
+                                <option value="1">Meja 1</option>
+                                <option value="2">Meja 2</option>
+                                <option value="3">Meja 3</option>
+                                <option value="4">Meja 4</option>
+                                <option value="5">Meja 5</option>
+                                <option value="6">Meja 6</option>
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Nama Pelanggan:</label>
+                            <input type="text" id="customerName" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="Nama Pelanggan">
+                        </div>
+                        <button id="createOrderBtn" class="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Buat Pesanan</button>
+                        <div class="mt-4">
+                            <h3 class="font-semibold mb-2">Daftar Meja</h3>
+                            <div id="tableStatus" class="grid grid-cols-2 gap-2">
+                                <!-- Table status will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-span-3">
+                        <div class="flex justify-between mb-4">
+                            <h3 class="font-semibold">Pesanan Aktif: <span id="currentTable"></span></h3>
+                            <div>
+                                <button id="saveOrderBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition mr-2">Simpan Pesanan</button>
+                                <button id="completeOrderBtn" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition">Selesaikan Pesanan</button>
+                            </div>
+                        </div>
+                        <div class="overflow-y-auto max-h-96 mb-4">
+                            <table class="w-full border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-200">
+                                        <th class="p-2 border">Menu</th>
+                                        <th class="p-2 border">Harga</th>
+                                        <th class="p-2 border">Qty</th>
+                                        <th class="p-2 border">Subtotal</th>
+                                        <th class="p-2 border">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="orderItems">
+                                    <!-- Order items will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="bg-gray-100 p-4 rounded-lg">
+                            <div class="flex justify-between font-bold mb-2">
+                                <span>Total:</span>
+                                <span id="orderTotal">Rp 0</span>
+                            </div>
+                            <div class="grid grid-cols-5 gap-4">
+                                <button data-category="makanan" class="p-2 bg-orange-100 text-orange-800 rounded-lg hover:bg-orange-200 transition">Makanan</button>
+                                <button data-category="minuman" class="p-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition">Minuman</button>
+                                <button data-category="snack" class="p-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 transition">Snack</button>
+                                <button data-category="paket" class="p-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 transition">Paket</button>
+                                <button data-category="lainnya" class="p-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition">Lainnya</button>
+                            </div>
+                            <div id="menuItems" class="grid grid-cols-1 md:grid-cols1-3 lg:grid-cols-4 gap-4 mt-4">
+                                <!-- Menu items will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kelola Menu Layer -->
+        <div id="menuLayer" class="layer">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold mb-4 text-blue-600">Kelola Menu</h2>
+                <div class="mb-4 flex justify-between">
+                    <button id="addMenuBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Tambah Menu Baru</button>
+                    <button id="exportMenuBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Export ke Excel</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse">
+                        <thead>
+                            <tr class="bg-gray-200">
+                                <th class="p-2 border">No</th>
+                                <th class="p-2 border">Gambar</th>
+                                <th class="p-2 border">Nama Menu</th>
+                                <th class="p-2 border">Kategori</th>
+                                <th class="p-2 border">Harga</th>
+                                <th class="p-2 border">Stok</th>
+                                <th class="p-2 border">Keterangan</th>
+                                <th class="p-2 border">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="menuList">
+                            <!-- Menu list will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Add/Edit Menu -->
+        <div id="menuModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                <h3 class="text-xl font-bold mb-4" id="menuModalTitle">Tambah Menu Baru</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 mb-1">Nama Menu:</label>
+                        <input type="text" id="menuName" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Kategori:</label>
+                        <select id="menuCategory" class="w-full p-2 border border-gray-300 rounded-lg">
+                            <option value="makanan">Makanan</option>
+                            <option value="minuman">Minuman</option>
+                            <option value="snack">Snack</option>
+                            <option value="paket">Paket</option>
+                            <option value="lainnya">Lainnya</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Harga:</label>
+                        <input type="number" id="menuPrice" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Stok:</label>
+                        <input type="number" id="menuStock" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Keterangan:</label>
+                        <textarea id="menuDescription" class="w-full p-2 border border-gray-300 rounded-lg"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Gambar:</label>
+                        <input type="file" id="menuImage" class="w-full p-2 border border-gray-300 rounded-lg" accept="image/*">
+                        <img id="menuImagePreview" src="https://placehold.co/300x200" alt="Preview gambar menu" class="mt-2 w-full h-32 object-cover">
+                    </div>
+                </div>
+                <div class="flex justify-end mt-6 space-x-2">
+                    <button id="cancelMenuBtn" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Batal</button>
+                    <button id="saveMenuBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Simpan</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inventori Layer -->
+        <div id="inventoryLayer" class="layer">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold mb-4 text-purple-600">Manajemen Inventori</h2>
+                <div class="mb-4 flex justify-between">
+                    <button id="addInventoryBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Tambah Barang</button>
+                    <button id="exportInventoryBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Export ke Excel</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse">
+                        <thead>
+                            <tr class="bg-gray-200">
+                                <th class="p-2 border">No</th>
+                                <th class="p-2 border">Nama Barang</th>
+                                <th class="p-2 border">Kategori</th>
+                                <th class="p-2 border">Jumlah</th>
+                                <th class="p-2 border">Satuan</th>
+                                <th class="p-2 border">Harga Beli</th>
+                                <th class="p-2 border">Total Nilai</th>
+                                <th class="p-2 border">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryList">
+                            <!-- Inventory list will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Add/Edit Inventory -->
+        <div id="inventoryModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                <h3 class="text-xl font-bold mb-4" id="inventoryModalTitle">Tambah Barang Inventori</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 mb-1">Nama Barang:</label>
+                        <input type="text" id="inventoryName" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Kategori:</label>
+                        <select id="inventoryCategory" class="w-full p-2 border border-gray-300 rounded-lg">
+                            <option value="bahan_baku">Bahan Baku</option>
+                            <option value="kemasan">Kemasan</option>
+                            <option value="peralatan">Peralatan</option>
+                            <option value="lainnya">Lainnya</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Jumlah:</label>
+                        <input type="number" id="inventoryQuantity" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Satuan:</label>
+                        <input type="text" id="inventoryUnit" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Harga Beli:</label>
+                        <input type="number" id="inventoryPrice" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Supplier:</label>
+                        <input type="text" id="inventorySupplier" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                </div>
+                <div class="flex justify-end mt-6 space-x-2">
+                    <button id="cancelInventoryBtn" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition">Batal</button>
+                    <button id="saveInventoryBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Simpan</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Laporan Layer -->
+        <div id="laporanLayer" class="layer">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-2xl font-bold mb-4 text-indigo-600">Laporan Keuangan</h2>
+                <div class="mb-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div class="bg-green-100 p-4 rounded-lg">
+                            <h3 class="font-semibold text-green-800">Total Pemasukan</h3>
+                            <p class="text-2xl font-bold text-green-800 mt-2" id="totalIncome">Rp 0</p>
+                        </div>
+                        <div class="bg-red-100 p-4 rounded-lg">
+                            <h3 class="font-semibold text-red-800">Total Pengeluaran</h3>
+                            <p class="text-2xl font-bold text-red-800 mt-2" id="totalExpense">Rp 0</p>
+                        </div>
+                        <div class="bg-blue-100 p-4 rounded-lg">
+                            <h3 class="font-semibold text-blue-800">Laba/Rugi</h3>
+                            <p class="text-2xl font-bold text-blue-800 mt-2" id="totalProfit">Rp 0</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between mb-4">
+                        <div class="flex space-x-2">
+                            <input type="date" id="reportStartDate" class="p-2 border border-gray-300 rounded-lg">
+                            <span class="flex items-center">s/d</span>
+                            <input type="date" id="reportEndDate" class="p-2 border border-gray-300 rounded-lg">
+                            <button id="filterReportBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">Filter</button>
+                        </div>
+                        <button id="exportReportBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Export ke Excel</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-gray-200">
+                                    <th class="p-2 border">Tanggal</th>
+                                    <th class="p-2 border">No. Transaksi</th>
+                                    <th class="p-2 border">Pelanggan</th>
+                                    <th class="p-2 border">Total</th>
+                                    <th class="p-2 border">Jenis</th>
+                                    <th class="p-2 border">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reportList">
+                                <!-- Reports will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Database simulation
+        let database = {
+            orders: [],
+            menus: [
+                {
+                    id: 1,
+                    name: "Sate Sapi Campur Lemak",
+                    category: "makanan",
+                    price: 25000,
+                    stock: 50,
+                    description: "Sate daging sapi campur lemak dengan bumbu maranggi",
+                    image: "images/sate_sapi_campur_lemak.png"
+                },
+                {
+                    id: 2,
+                    name: "Sate Sapi Full Daging",
+                    category: "makanan",
+                    price: 28000,
+                    stock: 50,
+                    description: "Sate sapi full daging tanpa lemak",
+                    image: "images/sate_sapi_full_daging.png"
+                },
+                {
+                    id: 3,
+                    name: "Sate Ayam",
+                    category: "makanan",
+                    price: 20000,
+                    stock: 50,
+                    description: "Sate ayam dengan bumbu kacang",
+                    image: "images/sate_ayam.png"
+                },
+                {
+                    id: 4,
+                    name: "Sate Kambing",
+                    category: "makanan",
+                    price: 30000,
+                    stock: 40,
+                    description: "Sate kambing muda empuk dengan bumbu kecap",
+                    image: "images/sate_kambing.png"
+                },
+                {
+                    id: 5,
+                    name: "Tahu Tempe",
+                    category: "makanan",
+                    price: 10000,
+                    stock: 100,
+                    description: "Gorengan tahu dan tempe crispy",
+                    image: "images/tahu_tempe.png"
+                },
+                {
+                    id: 6,
+                    name: "Es Teh",
+                    category: "minuman",
+                    price: 5000,
+                    stock: 200,
+                    description: "Es teh manis dingin menyegarkan",
+                    image: "images/es_teh.png"
+                },
+                {
+                    id: 7,
+                    name: "Es Jeruk",
+                    category: "minuman",
+                    price: 7000,
+                    stock: 200,
+                    description: "Es jeruk asli segar",
+                    image: "images/es_jeruk.png"
+                },
+                {
+                    id: 8,
+                    name: "Air Mineral",
+                    category: "minuman",
+                    price: 4000,
+                    stock: 300,
+                    description: "Air mineral dalam kemasan",
+                    image: "images/air_mineral.png"
+                },
+                {
+                    id: 9,
+                    name: "Nasi Putih",
+                    category: "makanan",
+                    price: 6000,
+                    stock: 100,
+                    description: "Nasi putih hangat",
+                    image: "images/nasi_putih.png"
+                },
+                {
+                    id: 10,
+                    name: "Nasi Liwet",
+                    category: "makanan",
+                    price: 15000,
+                    stock: 50,
+                    description: "Nasi liwet dengan aroma daun salam",
+                    image: "images/nasi_liwet.png"
+                }
+            ],
+            inventory: [
+                {
+                    id: 1,
+                    name: "Daging Sapi",
+                    category: "bahan_baku",
+                    quantity: 10,
+                    unit: "kg",
+                    price: 100000,
+                    supplier: "Peternakan Sapi Bandung"
+                },
+                {
+                    id: 2,
+                    name: "Kemasan Styrofoam",
+                    category: "kemasan",
+                    quantity: 500,
+                    unit: "pcs",
+                    price: 500,
+                    supplier: "PT Kemasan Indonesia"
+                }
+            ],
+            transactions: []
+        };
+
+        // Current order for order screen
+        let currentOrder = null;
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            // Navigation buttons
+            document.getElementById('kasirBtn').addEventListener('click', () => showLayer('kasir'));
+            document.getElementById('pesananBtn').addEventListener('click', () => showLayer('pesanan'));
+            document.getElementById('menuBtn').addEventListener('click', () => showLayer('menu'));
+            document.getElementById('inventoryBtn').addEventListener('click', () => showLayer('inventory'));
+            document.getElementById('laporanBtn').addEventListener('click', () => showLayer('laporan'));
+
+            // Initialize all components
+            initializeKasir();
+            initializePesanan();
+            initializeMenu();
+            initializeInventory();
+            initializeLaporan();
+        });
+
+        function showLayer(layerName) {
+            // Hide all layers
+            document.querySelectorAll('.layer').forEach(layer => {
+                layer.classList.remove('active-layer');
+            });
+
+            // Show the selected layer
+            document.getElementById(layerName + 'Layer').classList.add('active-layer');
+
+            // Refresh the layer content
+            switch(layerName) {
+                case 'kasir':
+                    refreshKasir();
+                    break;
+                case 'pesanan':
+                    refreshPesanan();
+                    break;
+                case 'menu':
+                    refreshMenu();
+                    break;
+                case 'inventory':
+                    refreshInventory();
+                    break;
+                case 'laporan':
+                    refreshLaporan();
+                    break;
+            }
+        }
+
+        // KASIR FUNCTIONS
+        function initializeKasir() {
+            document.getElementById('printReceipt').addEventListener('click', showReceiptPreview);
+            document.getElementById('confirmPrint').addEventListener('click', printReceipt);
+            document.getElementById('searchOrder').addEventListener('input', refreshKasir);
+        }
+
+        function refreshKasir() {
+            const searchTerm = document.getElementById('searchOrder').value.toLowerCase();
+            const orderList = document.getElementById('orderList');
+            orderList.innerHTML = '';
+
+            const filteredOrders = database.orders.filter(order => 
+                order.table.toString().includes(searchTerm) || 
+                order.customer.toLowerCase().includes(searchTerm)
+            );
+
+            filteredOrders.forEach((order, index) => {
+                const row = document.createElement('tr');
+                row.classList.add(index % 2 === 0 ? 'bg-gray-50' : 'bg-white');
+                row.innerHTML = `
+                    <td class="p-2 border">${index + 1}</td>
+                    <td class="p-2 border">Meja ${order.table}</td>
+                    <td class="p-2 border">${order.customer}</td>
+                    <td class="p-2 border">Rp ${order.total.toLocaleString()}</td>
+                    <td class="p-2 border">${order.completed ? 'Selesai' : 'Proses'}</td>
+                    <td class="p-2 border">
+                        <button class="px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200" onclick="showOrderDetails(${order.id})">Lihat</button>
+                        ${order.completed ? '' : `<button class="px-2 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200" onclick="completeOrder(${order.id})">Bayar</button>`}
+                    </td>
+                `;
+                orderList.appendChild(row);
+            });
+        }
+
+        function showOrderDetails(orderId) {
+            const order = database.orders.find(o => o.id === orderId);
+            if (!order) return;
+
+            const paymentDetails = document.getElementById('paymentDetails');
+            paymentDetails.innerHTML = `
+                <p><strong>Meja:</strong> ${order.table}</p>
+                <p><strong>Pelanggan:</strong> ${order.customer}</p>
+                <p><strong>Status:</strong> ${order.completed ? 'Selesai' : 'Proses'}</p>
+                <div class="mt-4">
+                    <h4 class="font-semibold mb-2">Detail Pesanan:</h4>
+                    <ul class="list-disc pl-5">
+                        ${order.items.map(item => `
+                            <li>${item.name} - ${item.quantity} x Rp ${item.price.toLocaleString()} = Rp ${(item.price * item.quantity).toLocaleString()}</li>
+                        `).join('')}
+                    </ul>
+                </div>
+                <div class="mt-4">
+                    <p><strong>Total:</strong> Rp ${order.total.toLocaleString()}</p>
+                </div>
+            `;
+            
+            if (!order.completed) {
+                document.getElementById('printReceipt').disabled = false;
+            }
+        }
+
+        function showReceiptPreview() {
+            const orderId = parseInt(document.querySelector('#orderList button[onclick^="completeOrder"]').getAttribute('onclick').match(/\d+/)[0]);
+            const order = database.orders.find(o => o.id === orderId);
+            
+            if (!order) return;
+
+            // Update receipt preview
+            document.getElementById('transactionDate').textContent = new Date().toLocaleString();
+            document.getElementById('receiptTable').textContent = `Meja ${order.table}`;
+            document.getElementById('receiptCustomer').textContent = order.customer;
+            
+            let receiptItemsHTML = '';
+            order.items.forEach(item => {
+                receiptItemsHTML += `
+                    <div class="flex justify-between">
+                        <span>${item.name}</span>
+                        <span>${item.quantity} x Rp ${item.price.toLocaleString()}</span>
+                    </div>
+                `;
+            });
+            document.getElementById('receiptItems').innerHTML = receiptItemsHTML;
+            
+            document.getElementById('receiptTotal').textContent = `Rp ${order.total.toLocaleString()}`;
+            
+            // Show random payment amount (for demo purposes)
+            const paid = Math.ceil(order.total / 10000) * 10000 + 5000;
+            document.getElementById('receiptPaid').textContent = `Rp ${paid.toLocaleString()}`;
+            document.getElementById('receiptChange').textContent = `Rp ${(paid - order.total).toLocaleString()}`;
+            
+            document.getElementById('receiptPreview').classList.remove('hidden');
+        }
+
+        function printReceipt() {
+            window.print();
+
+            // Setelah print, tandai sebagai selesai:
+            const orderId = parseInt(document.querySelector('#orderList button[onclick^="completeOrder"]').getAttribute('onclick').match(/\d+/)[0]);
+            completeOrder(orderId);
+        }
+
+        function completeOrder(orderId) {
+            const orderIndex = database.orders.findIndex(o => o.id === orderId);
+            if (orderIndex === -1) return;
+            
+            database.orders[orderIndex].completed = true;
+            
+            // Add to transactions
+            database.transactions.push({
+                id: database.transactions.length + 1,
+                date: new Date(),
+                type: 'income',
+                amount: database.orders[orderIndex].total,
+                reference: `Order ${orderId}`
+            });
+            
+            // Refresh UI
+            refreshKasir();
+            document.getElementById('paymentDetails').innerHTML = '<p class="text-gray-500">Pilih pesanan untuk melihat detail</p>';
+            document.getElementById('printReceipt').disabled = true;
+            document.getElementById('receiptPreview').classList.add('hidden');
+            
+            // Refresh report if on report screen
+            if (document.getElementById('laporanLayer').classList.contains('active-layer')) {
+                refreshLaporan();
+            }
+        }
+
+        // PESANAN FUNCTIONS
+        function initializePesanan() {
+            document.getElementById('createOrderBtn').addEventListener('click', createNewOrder);
+            document.getElementById('saveOrderBtn').addEventListener('click', saveCurrentOrder);
+            document.getElementById('completeOrderBtn').addEventListener('click', completeCurrentOrder);
+            
+            // Menu category buttons
+            document.querySelectorAll('[data-category]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const category = this.getAttribute('data-category');
+                    displayMenuItems(category);
+                });
+            });
+            
+            // Initial table status
+            refreshTableStatus();
+        }
+
+        function refreshPesanan() {
+            refreshTableStatus();
+            
+            if (currentOrder) {
+                displayOrderItems();
+                document.getElementById('currentTable').textContent = `Meja ${currentOrder.table}`;
+            } else {
+                document.getElementById('orderItems').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">Buat atau pilih pesanan untuk mulai menambahkan item</td></tr>';
+                document.getElementById('currentTable').textContent = '';
+                document.getElementById('orderTotal').textContent = 'Rp 0';
+            }
+            
+            // Display all menu items by default
+            displayMenuItems('all');
+        }
+
+        function refreshTableStatus() {
+            const tableStatus = document.getElementById('tableStatus');
+            tableStatus.innerHTML = '';
+            
+            for (let i = 1; i <= 6; i++) {
+                const table = database.orders.find(o => o.table === i && !o.completed);
+                const div = document.createElement('div');
+                div.className = `meja-item p-4 rounded-lg text-center ${table ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`;
+                div.innerHTML = `
+                    <div class="font-bold">Meja ${i}</div>
+                    <div class="text-sm">${table ? table.customer : 'Kosong'}</div>
+                `;
+                if (table) {
+                    div.addEventListener('click', () => {
+                        currentOrder = JSON.parse(JSON.stringify(table));
+                        displayOrderItems();
+                        document.getElementById('currentTable').textContent = `Meja ${currentOrder.table}`;
+                    });
+                }
+                tableStatus.appendChild(div);
+            }
+        }
+
+        function createNewOrder() {
+            const tableNumber = parseInt(document.getElementById('tableNumber').value);
+            const customerName = document.getElementById('customerName').value.trim();
+            
+            if (!customerName) {
+                alert('Silakan masukkan nama pelanggan!');
+                return;
+            }
+            
+            // Check if table is already occupied
+            const existingOrder = database.orders.find(o => o.table === tableNumber && !o.completed);
+            if (existingOrder) {
+                alert(`Meja ${tableNumber} sudah dipakai oleh ${existingOrder.customer}!`);
+                return;
+            }
+            
+            currentOrder = {
+                id: database.orders.length + 1,
+                table: tableNumber,
+                customer: customerName,
+                items: [],
+                total: 0,
+                completed: false
+            };
+            
+            refreshPesanan();
+        }
+
+        function displayOrderItems() {
+            const orderItems = document.getElementById('orderItems');
+            orderItems.innerHTML = '';
+            
+            if (!currentOrder || currentOrder.items.length === 0) {
+                orderItems.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">Belum ada item dalam pesanan ini</td></tr>';
+                document.getElementById('orderTotal').textContent = 'Rp 0';
+                return;
+            }
+            
+            let total = 0;
+            currentOrder.items.forEach((item, index) => {
+                const itemTotal = item.price * item.quantity;
+                total += itemTotal;
+                
+                const row = document.createElement('tr');
+                row.className = index % 2 === 0 ? 'bg-gray-50' : 'bg-white';
+                row.innerHTML = `
+                    <td class="p-2 border">${item.name}</td>
+                    <td class="p-2 border">Rp ${item.price.toLocaleString()}</td>
+                    <td class="p-2 border">${item.quantity}</td>
+                    <td class="p-2 border">Rp ${itemTotal.toLocaleString()}</td>
+                    <td class="p-2 border">
+                        <button class="px-2 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200" onclick="removeOrderItem(${index})">Hapus</button>
+                    </td>
+                `;
+                orderItems.appendChild(row);
+            });
+            
+            // Add total row
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'bg-gray-200 font-bold';
+            totalRow.innerHTML = `
+                <td class="p-2 border" colspan="3">Total</td>
+                <td class="p-2 border">Rp ${total.toLocaleString()}</td>
+                <td class="p-2 border"></td>
+            `;
+            orderItems.appendChild(totalRow);
+            
+            // Update current order total
+            if (currentOrder) {
+                currentOrder.total = total;
+                document.getElementById('orderTotal').textContent = `Rp ${total.toLocaleString()}`;
+            }
+        }
+
+        function removeOrderItem(index) {
+            if (!currentOrder || !currentOrder.items[index]) return;
+            
+            currentOrder.items.splice(index, 1);
+            displayOrderItems();
+            displayMenuItems('all'); // Refresh menu items to update stock indicators
+        }
+
+        function displayMenuItems(category) {
+            const menuItems = document.getElementById('menuItems');
+            menuItems.innerHTML = '';
+            
+            let filteredMenu = [...database.menus];
+            
+            if (category !== 'all') {
+                filteredMenu = filteredMenu.filter(item => item.category === category);
+            }
+            
+            filteredMenu.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'menu-item bg-white p-4 rounded-lg shadow hover:shadow-md';
+                div.innerHTML = `
+                    <div class="flex">
+                        <div class="w-16 h-16 flex-shrink-0 mr-3">
+                            <img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover rounded">
+                        </div>
+                        <div class="flex-grow">
+                            <h4 class="font-bold">${item.name}</h4>
+                            <p class="text-sm text-gray-600">Rp ${item.price.toLocaleString()}</p>
+                            <p class="text-xs text-gray-500">Stok: ${item.stock}</p>
+                        </div>
+                    </div>
+                `;
+                
+                div.addEventListener('click', () => addItemToOrder(item));
+                menuItems.appendChild(div);
+            });
+        }
+
+        function addItemToOrder(menuItem) {
+            if (!currentOrder) {
+                alert('Silakan buat atau pilih pesanan terlebih dahulu!');
+                return;
+            }
+            
+            if (menuItem.stock <= 0) {
+                alert('Stok menu ini habis!');
+                return;
+            }
+            
+            // Check if item already in order
+            const existingItemIndex = currentOrder.items.findIndex(item => item.id === menuItem.id);
+            
+            if (existingItemIndex >= 0) {
+                currentOrder.items[existingItemIndex].quantity += 1;
+            } else {
+                currentOrder.items.push({
+                    id: menuItem.id,
+                    name: menuItem.name,
+                    price: menuItem.price,
+                    quantity: 1
+                });
+            }
+            
+            // Reduce stock (we'll restore if order is cancelled)
+            menuItem.stock -= 1;
+            
+            displayOrderItems();
+            displayMenuItems('all'); // Refresh to show updated stock
+        }
+
+        function saveCurrentOrder() {
+            if (!currentOrder) return;
+            
+            // Check if this is a new order or existing order
+            const existingOrderIndex = database.orders.findIndex(o => o.id === currentOrder.id);
+            
+            if (existingOrderIndex >= 0) {
+                // Update existing order
+                database.orders[existingOrderIndex] = JSON.parse(JSON.stringify(currentOrder));
+            } else {
+                // Add new order
+                database.orders.push(JSON.parse(JSON.stringify(currentOrder)));
+            }
+            
+            alert('Pesanan berhasil disimpan!');
+            refreshPesanan();
+            
+            // If on kasir screen, refresh it too
+            if (document.getElementById('kasirLayer').classList.contains('active-layer')) {
+                refreshKasir();
+            }
+        }
+
+        function completeCurrentOrder() {
+            if (!currentOrder || currentOrder.items.length === 0) {
+                alert('Tidak ada item dalam pesanan ini!');
+                return;
+            }
+            
+            if (confirm('Selesaikan pesanan ini dan kirim ke kasir?')) {
+                currentOrder.completed = false; // Completed will be set to true when paid
+                
+                // Add to database if new order
+                if (!database.orders.some(o => o.id === currentOrder.id)) {
+                    database.orders.push(JSON.parse(JSON.stringify(currentOrder)));
+                }
+                
+                // Reset current order
+                currentOrder = null;
+                
+                refreshPesanan();
+                if (document.getElementById('kasirLayer').classList.contains('active-layer')) {
+                    refreshKasir();
+                }
+                
+                alert('Pesanan telah dikirim ke kasir!');
+            }
+        }
+
+        // MENU MANAGEMENT FUNCTIONS
+        function initializeMenu() {
+            document.getElementById('addMenuBtn').addEventListener('click', () => showMenuModal('add'));
+            document.getElementById('exportMenuBtn').addEventListener('click', exportMenuToExcel);
+            document.getElementById('cancelMenuBtn').addEventListener('click', closeMenuModal);
+            document.getElementById('saveMenuBtn').addEventListener('click', saveMenu);
+            
+            // For image preview
+            document.getElementById('menuImage').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        document.getElementById('menuImagePreview').src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            refreshMenu();
+        }
+
+        function refreshMenu() {
+            const menuList = document.getElementById('menuList');
+            menuList.innerHTML = '';
+            
+            database.menus.forEach((menu, index) => {
+                const row = document.createElement('tr');
+                row.className = index % 2 === 0 ? 'bg-gray-50' : 'bg-white';
+                row.innerHTML = `
+                    <td class="p-2 border">${index + 1}</td>
+                    <td class="p-2 border">
+                        <img src="${menu.image}" alt="${menu.name}" class="w-16 h-16 object-cover">
+                    </td>
+                    <td class="p-2 border">${menu.name}</td>
+                    <td class="p-2 border">${getCategoryName(menu.category)}</td>
+                    <td class="p-2 border">Rp ${menu.price.toLocaleString()}</td>
+                    <td class="p-2 border">${menu.stock}</td>
+                    <td class="p-2 border">${menu.description}</td>
+                    <td class="p-2 border">
+                        <button class="px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 mr-1" onclick="showMenuModal('edit', ${menu.id})">Edit</button>
+                        <button class="px-2 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200" onclick="deleteMenu(${menu.id})">Hapus</button>
+                    </td>
+                `;
+                menuList.appendChild(row);
+            });
+        }
+
+        function getCategoryName(category) {
+            const categories = {
+                'makanan': 'Makanan',
+                'minuman': 'Minuman',
+                'snack': 'Snack',
+                'paket': 'Paket',
+                'lainnya': 'Lainnya'
+            };
+            return categories[category] || category;
+        }
+
+        function showMenuModal(action, menuId = null) {
+            const modal = document.getElementById('menuModal');
+            const title = document.getElementById('menuModalTitle');
+            
+            if (action === 'add') {
+                title.textContent = 'Tambah Menu Baru';
+                resetMenuForm();
+            } else if (action === 'edit' && menuId) {
+                title.textContent = 'Edit Menu';
+                const menu = database.menus.find(m => m.id === menuId);
+                if (menu) {
+                    document.getElementById('menuName').value = menu.name;
+                    document.getElementById('menuCategory').value = menu.category;
+                    document.getElementById('menuPrice').value = menu.price;
+                    document.getElementById('menuStock').value = menu.stock;
+                    document.getElementById('menuDescription').value = menu.description;
+                    document.getElementById('menuImagePreview').src = menu.image;
+                    // Store the menu ID in a data attribute for saving
+                    document.getElementById('menuModal').setAttribute('data-menu-id', menu.id);
+                }
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeMenuModal() {
+            document.getElementById('menuModal').classList.add('hidden');
+        }
+
+        function resetMenuForm() {
+            document.getElementById('menuName').value = '';
+            document.getElementById('menuCategory').value = 'makanan';
+            document.getElementById('menuPrice').value = '';
+            document.getElementById('menuStock').value = '';
+            document.getElementById('menuDescription').value = '';
+            document.getElementById('menuImage').value = '';
+            document.getElementById('menuImagePreview').src = 'https://placehold.co/300x200';
+            document.getElementById('menuModal').removeAttribute('data-menu-id');
+        }
+
+        function saveMenu() {
+            const menuId = document.getElementById('menuModal').getAttribute('data-menu-id');
+            const name = document.getElementById('menuName').value.trim();
+            const category = document.getElementById('menuCategory').value;
+            const price = parseInt(document.getElementById('menuPrice').value);
+            const stock = parseInt(document.getElementById('menuStock').value);
+            const description = document.getElementById('menuDescription').value.trim();
+            const imagePreview = document.getElementById('menuImagePreview').src;
+            
+            if (!name || isNaN(price) || isNaN(stock)) {
+                alert('Harap isi semua field dengan benar!');
+                return;
+            }
+            
+            if (menuId) {
+                // Edit existing menu
+                const menuIndex = database.menus.findIndex(m => m.id === parseInt(menuId));
+                if (menuIndex >= 0) {
+                    database.menus[menuIndex] = {
+                        ...database.menus[menuIndex],
+                        name,
+                        category,
+                        price,
+                        stock,
+                        description,
+                        image: imagePreview
+                    };
+                }
+            } else {
+                // Add new menu
+                const newId = database.menus.length > 0 ? Math.max(...database.menus.map(m => m.id)) + 1 : 1;
+                database.menus.push({
+                    id: newId,
+                    name,
+                    category,
+                    price,
+                    stock,
+                    description,
+                    image: imagePreview
+                });
+            }
+            
+            refreshMenu();
+            closeMenuModal();
+            alert('Menu berhasil disimpan!');
+            
+            // If on order screen, refresh menu display
+            if (document.getElementById('pesananLayer').classList.contains('active-layer')) {
+                refreshPesanan();
+            }
+        }
+
+        function deleteMenu(menuId) {
+            if (confirm('Hapus menu ini?')) {
+                const menuIndex = database.menus.findIndex(m => m.id === menuId);
+                if (menuIndex >= 0) {
+                    database.menus.splice(menuIndex, 1);
+                    refreshMenu();
+                    alert('Menu berhasil dihapus!');
+                    
+                    // If on order screen, refresh menu display
+                    if (document.getElementById('pesananLayer').classList.contains('active-layer')) {
+                        refreshPesanan();
+                    }
+                }
+            }
+        }
+
+        function exportMenuToExcel() {
+            const data = database.menus.map(menu => ({
+                'Nama Menu': menu.name,
+                'Kategori': getCategoryName(menu.category),
+                'Harga': menu.price,
+                'Stok': menu.stock,
+                'Keterangan': menu.description
+            }));
+            
+            exportToExcel(data, 'Daftar Menu');
+        }
+
+        // INVENTORY MANAGEMENT FUNCTIONS
+        function initializeInventory() {
+            document.getElementById('addInventoryBtn').addEventListener('click', () => showInventoryModal('add'));
+            document.getElementById('exportInventoryBtn').addEventListener('click', exportInventoryToExcel);
+            document.getElementById('cancelInventoryBtn').addEventListener('click', closeInventoryModal);
+            document.getElementById('saveInventoryBtn').addEventListener('click', saveInventory);
+            
+            refreshInventory();
+        }
+
+        function refreshInventory() {
+            const inventoryList = document.getElementById('inventoryList');
+            inventoryList.innerHTML = '';
+            
+            database.inventory.forEach((item, index) => {
+                const totalValue = item.quantity * item.price;
+                
+                const row = document.createElement('tr');
+                row.className = index % 2 === 0 ? 'bg-gray-50' : 'bg-white';
+                row.innerHTML = `
+                    <td class="p-2 border">${index + 1}</td>
+                    <td class="p-2 border">${item.name}</td>
+                    <td class="p-2 border">${getInventoryCategoryName(item.category)}</td>
+                    <td class="p-2 border">${item.quantity}</td>
+                    <td class="p-2 border">${item.unit}</td>
+                    <td class="p-2 border">Rp ${item.price.toLocaleString()}</td>
+                    <td class="p-2 border">Rp ${totalValue.toLocaleString()}</td>
+                    <td class="p-2 border">
+                        <button class="px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 mr-1" onclick="showInventoryModal('edit', ${item.id})">Edit</button>
+                        <button class="px-2 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200" onclick="deleteInventory(${item.id})">Hapus</button>
+                    </td>
+                `;
+                inventoryList.appendChild(row);
+            });
+        }
+
+        function getInventoryCategoryName(category) {
+            const categories = {
+                'bahan_baku': 'Bahan Baku',
+                'kemasan': 'Kemasan',
+                'peralatan': 'Peralatan',
+                'lainnya': 'Lainnya'
+            };
+            return categories[category] || category;
+        }
+
+        function showInventoryModal(action, inventoryId = null) {
+            const modal = document.getElementById('inventoryModal');
+            const title = document.getElementById('inventoryModalTitle');
+            
+            if (action === 'add') {
+                title.textContent = 'Tambah Barang Inventori';
+                resetInventoryForm();
+            } else if (action === 'edit' && inventoryId) {
+                title.textContent = 'Edit Barang Inventori';
+                const item = database.inventory.find(i => i.id === inventoryId);
+                if (item) {
+                    document.getElementById('inventoryName').value = item.name;
+                    document.getElementById('inventoryCategory').value = item.category;
+                    document.getElementById('inventoryQuantity').value = item.quantity;
+                    document.getElementById('inventoryUnit').value = item.unit;
+                    document.getElementById('inventoryPrice').value = item.price;
+                    document.getElementById('inventorySupplier').value = item.supplier || '';
+                    // Store the inventory ID in a data attribute for saving
+                    document.getElementById('inventoryModal').setAttribute('data-inventory-id', item.id);
+                }
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeInventoryModal() {
+            document.getElementById('inventoryModal').classList.add('hidden');
+        }
+
+        function resetInventoryForm() {
+            document.getElementById('inventoryName').value = '';
+            document.getElementById('inventoryCategory').value = 'bahan_baku';
+            document.getElementById('inventoryQuantity').value = '';
+            document.getElementById('inventoryUnit').value = '';
+            document.getElementById('inventoryPrice').value = '';
+            document.getElementById('inventorySupplier').value = '';
+            document.getElementById('inventoryModal').removeAttribute('data-inventory-id');
+        }
+
+        function saveInventory() {
+            const inventoryId = document.getElementById('inventoryModal').getAttribute('data-inventory-id');
+            const name = document.getElementById('inventoryName').value.trim();
+            const category = document.getElementById('inventoryCategory').value;
+            const quantity = parseInt(document.getElementById('inventoryQuantity').value);
+            const unit = document.getElementById('inventoryUnit').value.trim();
+            const price = parseInt(document.getElementById('inventoryPrice').value);
+            const supplier = document.getElementById('inventorySupplier').value.trim();
+            
+            if (!name || isNaN(quantity) || !unit || isNaN(price)) {
+                alert('Harap isi semua field dengan benar!');
+                return;
+            }
+            
+            if (inventoryId) {
+                // Edit existing inventory
+                const itemIndex = database.inventory.findIndex(i => i.id === parseInt(inventoryId));
+                if (itemIndex >= 0) {
+                    database.inventory[itemIndex] = {
+                        ...database.inventory[itemIndex],
+                        name,
+                        category,
+                        quantity,
+                        unit,
+                        price,
+                        supplier
+                    };
+                }
+            } else {
+                // Add new inventory
+                const newId = database.inventory.length > 0 ? Math.max(...database.inventory.map(i => i.id)) + 1 : 1;
+                database.inventory.push({
+                    id: newId,
+                    name,
+                    category,
+                    quantity,
+                    unit,
+                    price,
+                    supplier
+                });
+            }
+            
+            refreshInventory();
+            closeInventoryModal();
+            alert('Barang inventori berhasil disimpan!');
+        }
+
+        function deleteInventory(inventoryId) {
+            if (confirm('Hapus barang inventori ini?')) {
+                const itemIndex = database.inventory.findIndex(i => i.id === inventoryId);
+                if (itemIndex >= 0) {
+                    database.inventory.splice(itemIndex, 1);
+                    refreshInventory();
+                    alert('Barang inventori berhasil dihapus!');
+                }
+            }
+        }
+
+        function exportInventoryToExcel() {
+            const data = database.inventory.map(item => ({
+                'Nama Barang': item.name,
+                'Kategori': getInventoryCategoryName(item.category),
+                'Jumlah': item.quantity,
+                'Satuan': item.unit,
+                'Harga Beli': item.price,
+                'Total Nilai': item.quantity * item.price,
+                'Supplier': item.supplier
+            }));
+            
+            exportToExcel(data, 'Daftar Inventori');
+        }
+
+        // LAPORAN FUNCTIONS
+        function initializeLaporan() {
+            document.getElementById('filterReportBtn').addEventListener('click', refreshLaporan);
+            document.getElementById('exportReportBtn').addEventListener('click', exportReportToExcel);
+            
+            // Set default dates (today)
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('reportStartDate').value = today;
+            document.getElementById('reportEndDate').value = today;
+            
+            refreshLaporan();
+        }
+
+        function refreshLaporan() {
+            const startDate = document.getElementById('reportStartDate').value;
+            const endDate = document.getElementById('reportEndDate').value;
+            
+            if (!startDate || !endDate) {
+                alert('Harap pilih tanggal awal dan akhir!');
+                return;
+            }
+            
+            // Filter transactions by date
+            const filteredTransactions = database.transactions.filter(tx => {
+                const txDate = new Date(tx.date).toISOString().split('T')[0];
+                return txDate >= startDate && txDate <= endDate;
+            });
+            
+            // Display transactions
+            displayReportTransactions(filteredTransactions);
+            
+            // Calculate totals
+            const totalIncome = filteredTransactions
+                .filter(tx => tx.type === 'income')
+                .reduce((sum, tx) => sum + tx.amount, 0);
+                
+            const totalExpense = filteredTransactions
+                .filter(tx => tx.type === 'expense')
+                .reduce((sum, tx) => sum + tx.amount, 0);
+                
+            const totalProfit = totalIncome - totalExpense;
+            
+            document.getElementById('totalIncome').textContent = `Rp ${totalIncome.toLocaleString()}`;
+            document.getElementById('totalExpense').textContent = `Rp ${totalExpense.toLocaleString()}`;
+            document.getElementById('totalProfit').textContent = `Rp ${totalProfit.toLocaleString()}`;
+        }
+
+        function displayReportTransactions(transactions) {
+            const reportList = document.getElementById('reportList');
+            reportList.innerHTML = '';
+            
+            if (transactions.length === 0) {
+                reportList.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Tidak ada transaksi dalam periode ini</td></tr>';
+                return;
+            }
+            
+            transactions.forEach((tx, index) => {
+                const row = document.createElement('tr');
+                row.className = index % 2 === 0 ? 'bg-gray-50' : 'bg-white';
+                row.innerHTML = `
+                    <td class="p-2 border">${new Date(tx.date).toLocaleDateString()}</td>
+                    <td class="p-2 border">${tx.reference}</td>
+                    <td class="p-2 border">${tx.customer || '-'}</td>
+                    <td class="p-2 border">Rp ${tx.amount.toLocaleString()}</td>
+                    <td class="p-2 border ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}">${tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}</td>
+                    <td class="p-2 border">
+                        <button class="px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200">Detail</button>
+                    </td>
+                `;
+                reportList.appendChild(row);
+            });
+        }
+
+        function exportReportToExcel() {
+            const startDate = document.getElementById('reportStartDate').value;
+            const endDate = document.getElementById('reportEndDate').value;
+            
+            if (!startDate || !endDate) {
+                alert('Harap pilih tanggal awal dan akhir!');
+                return;
+            }
+            
+            // Filter transactions by date
+            const filteredTransactions = database.transactions.filter(tx => {
+                const txDate = new Date(tx.date).toISOString().split('T')[0];
+                return txDate >= startDate && txDate <= endDate;
+            });
+            
+            const data = filteredTransactions.map(tx => ({
+                'Tanggal': new Date(tx.date).toLocaleDateString(),
+                'No. Referensi': tx.reference,
+                'Pelanggan': tx.customer || '-',
+                'Jumlah': tx.amount,
+                'Jenis': tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+                'Keterangan': tx.description || '-'
+            }));
+            
+            exportToExcel(data, `Laporan Keuangan ${startDate} sd ${endDate}`);
+        }
+
+        // UTILITY FUNCTIONS
+        function exportToExcel(data, filename) {
+            try {
+                // Create worksheet
+                const ws = XLSX.utils.json_to_sheet(data);
+                
+                // Create workbook
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+                
+                // Export to file
+                XLSX.writeFile(wb, `${filename}.xlsx`);
+            } catch (e) {
+                alert('Error exporting to Excel: ' + e.message);
+            }
+        }
+
+        // Make functions available in global scope for button onclick handlers
+        window.showOrderDetails = showOrderDetails;
+        window.completeOrder = completeOrder;
+        window.removeOrderItem = removeOrderItem;
+    </script>
+</body>
+</html>
